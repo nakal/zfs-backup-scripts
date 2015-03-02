@@ -1,7 +1,7 @@
 # ZFS Backup Scripts
 
 This is a collection of backup scripts for ZFS (as found
-on [FreeBSD][].
+on [FreeBSD][]).
 
 *Disclaimer:* Please take a look at the scripts before running them.
 Be aware that they might erase something, because they are programmed
@@ -121,7 +121,7 @@ you are not using [FreeBSD][].
 ### Command line syntax
 
 ```
-backup-zfs-all.pl [ -i ignorelist ] [ -c backup-configuration ] poolname hostname level\n";
+backup-zfs-all.pl [ -i ignorelist ] [ -c backup-configuration ] poolname hostname level
 ```
 
 `poolname` is the pool which is to be handled. `hostname` will be used for
