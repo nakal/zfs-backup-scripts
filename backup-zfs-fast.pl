@@ -66,24 +66,6 @@ if ($use_ssh && $ssh_ping_backup_host) {
 	}
 }
 
-my $file_extension = "$lev";
-my $compression_pipe = "";
-my $encrypt_pipe = "";
-if ($use_pigz) {
-	$file_extension .= ".gz";
-	$compression_pipe = "| $pigz_path -c -p $pigz_cpu_num ";
-}
-if ($use_gzip) {
-	$file_extension .= ".gz";
-	$compression_pipe = "| $gzip_path -c ";
-}
-if ($use_gpg) {
-	$file_extension .= ".gpg";
-	$encrypt_pipe = "| $gpg_path --homedir $gpgdir --recipient $gpgkey -e ";
-}
-
-print "Dumping: $zfs on level $lev.\n";
-
 my @dumphistory = ();
 my @dumphistory_other = ();
 
@@ -126,6 +108,24 @@ if (scalar(@dumphistory)<1) {
 	print STDERR "No last dump found. Forcing level 0 backup.\n";
 	$lev = 0;
 	$firstbackup = 1;
+}
+
+print "Dumping: $zfs on level $lev.\n";
+
+my $file_extension = "$lev";
+my $compression_pipe = "";
+my $encrypt_pipe = "";
+if ($use_pigz) {
+	$file_extension .= ".gz";
+	$compression_pipe = "| $pigz_path -c -p $pigz_cpu_num ";
+}
+if ($use_gzip) {
+	$file_extension .= ".gz";
+	$compression_pipe = "| $gzip_path -c ";
+}
+if ($use_gpg) {
+	$file_extension .= ".gpg";
+	$encrypt_pipe = "| $gpg_path --homedir $gpgdir --recipient $gpgkey -e ";
 }
 
 my $snapname = sprintf ("L%1d-%s", $lev, $timenow);
