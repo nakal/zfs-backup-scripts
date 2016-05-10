@@ -164,7 +164,7 @@ if ($lev == 0) {
 }
 
 if ($use_ssh) {
-	system("ssh", "-c", "arcfour128", "-o", "Compression=no", $ssh_backup_user . "\@" . $ssh_backup_host, "mv $ssh_remotedir/$backupprefix.$file_extension $ssh_remotedir/$backupprefix.$file_extension.old");
+	system("ssh", "-o", "Compression=no", $ssh_backup_user . "\@" . $ssh_backup_host, "mv $ssh_remotedir/$backupprefix.$file_extension $ssh_remotedir/$backupprefix.$file_extension.old");
 } else {
 	system("mv $localdir/$backupprefix.$file_extension $localdir/$backupprefix.$file_extension.old");
 }
@@ -172,7 +172,7 @@ print "Making zfs snapshot...\n";
 system("sh", "-c", $sendcmd1);
 if ($use_ssh) {
 	print "Sending zfs snapshot to $ssh_backup_host...\n";
-	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe | ssh -c arcfour128 -o Compression=no " . $ssh_backup_user . "\@" . $ssh_backup_host . " 'cat - > $ssh_remotedir/$backupprefix.$file_extension'");
+	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe | ssh -o Compression=no " . $ssh_backup_user . "\@" . $ssh_backup_host . " 'cat - > $ssh_remotedir/$backupprefix.$file_extension'");
 } else {
 	print "Saving zfs snapshot in $localdir...\n";
 	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe > $localdir/$backupprefix.$file_extension");
