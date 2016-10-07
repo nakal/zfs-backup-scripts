@@ -9,6 +9,7 @@ my $backup_history = "/var/db/backup-zfs-history";
 my $gpg_path = "/usr/local/bin/gpg";
 my $pigz_path = "/usr/local/bin/pigz";
 my $gzip_path = "/usr/bin/gzip";
+my $openssl_path = "/usr/bin/openssl";
 my $config_path = undef;
 
 # configuration defaults
@@ -19,8 +20,10 @@ my $ssh_remotedir = "/backups";
 my $ssh_ping_backup_host = 0; # ping backup host before going on
 my $localdir = "/mnt/backups"; # if NOT using ssh, specify
 my $use_gpg = 0;
+my $use_aes = 0;
 my $gpgdir = "~/.gnupg";
 my $gpgkey = "backup\@example.org";
+my $aes_passfile = undef;
 my $use_pigz = 0;
 my $pigz_cpu_num = 3; # number of CPUs to use
 my $use_gzip = 0;
@@ -51,11 +54,24 @@ if ($verbose) {
 	print "(gzip)\n" if ($use_gzip);
 	print "(pigz; parallel $pigz_cpu_num)\n" if ($use_pigz);
 	print "\twill encrypt (key $gpgkey from directory $gpgdir)\n" if ($use_gpg);
+	print "\twill encrypt (password from file $aes_passfile)\n" if ($use_aes);
 }
 
 if ($use_gzip && $use_pigz) {
 	print "Configuration error: cannot use gzip and pigz together.\n";
 	exit 1;
+}
+
+if ($use_gpg && $use_aes) {
+	print "Configuration error: cannot use GPG and AES together.\n";
+	exit 1;
+}
+
+if ($use_aes) {
+	if (!defined($aes_passfile) || !-r $aes_passfile) {
+		print "Configuration error: AES needs aes_passfile.\n";
+		exit 1;
+	}
 }
 
 if ($use_ssh && $ssh_ping_backup_host) {
@@ -126,6 +142,10 @@ if ($use_gzip) {
 if ($use_gpg) {
 	$file_extension .= ".gpg";
 	$encrypt_pipe = "| $gpg_path --homedir $gpgdir --recipient $gpgkey -e ";
+}
+if ($use_aes) {
+	$file_extension .= ".aes";
+	$encrypt_pipe = "| $openssl_path aes-128-cbc -e -kfile $aes_passfile";
 }
 
 my $snapname = sprintf ("L%1d-%s", $lev, $timenow);
@@ -251,6 +271,14 @@ sub read_configuration {
 		}
 		if ($k eq "use_gpg") {
 			$use_gpg = &get_bool($cfg{$k});
+			next;
+		}
+		if ($k eq "use_aes") {
+			$use_aes = &get_bool($cfg{$k});
+			next;
+		}
+		if ($k eq "aes_passfile") {
+			$aes_passfile = $cfg{$k};
 			next;
 		}
 		if ($k eq "gpg_dir") {

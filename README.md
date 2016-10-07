@@ -96,6 +96,17 @@ Compression makes backups slower.
 Furthermore, it is possible to encrypt the backup (after the optional
 compression).
 
+With AES-128-CBC (quite fast):
+
+```
+use_aes 1
+aes_passfile ~/.aes_passphrase
+```
+
+`aes_passfile` contains the password in the first line of the text file
+
+or with GPG (makes backups a lot slower!):
+
 ```
 use_gpg 1
 gpg_dir ~/.gnupg
@@ -104,8 +115,6 @@ gpg_key backupadmin@example.org
 
 `gpg_dir` gives the location where your `gpg` keyring is stored.
 `gpg_key` is the key to use for encryption.
-
-Encryption makes backups slower.
 
 ## backup-zfs-all.pl
 
