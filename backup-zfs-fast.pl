@@ -212,6 +212,10 @@ if (open(FILE, ">$backup_history")) {
 		} else {
 			my $dest_snap=$dumphistory[$d]{'snap'};
 			if (length($dest_snap)>0) {
+				if ($dest_snap eq $snapname) {
+					print "Skipping deleting $dest_snap (this is the latest backup).";
+					next;
+				}
 				print "Deleting backup $dest_snap\n";
 				my $destroycmd = "/sbin/zfs destroy -f " . $zfs .
 					"@" . $dest_snap;
