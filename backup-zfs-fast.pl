@@ -110,23 +110,23 @@ if (open(FILE, $backup_history)) {
 		}
 	}
 	close(FILE);
-
-	if (scalar(@dumphistory)>0) {
-		my %l = %{$dumphistory[scalar(@dumphistory)-1]};
-		print "Last dump: level " . $l{'lev'} . " on " . $l{'date'} . "\n";
-	}
 } else {
 	print STDERR "Warning: $backup_history does not exist.\n";
 }
 
 my $firstbackup = 0;
+my $diff_msg = "";
 if (scalar(@dumphistory)<1) {
-	print STDERR "No last dump found. Forcing level 0 backup.\n";
+	$diff_msg = "no last dump found, forcing level 0 backup";
 	$lev = 0;
 	$firstbackup = 1;
+} else {
+	my %l = %{$dumphistory[scalar(@dumphistory)-1]};
+	$diff_msg = "last dump: level " . $l{'lev'} . " on " . $l{'date'}
 }
 
-print "Dumping: $zfs on level $lev.\n";
+printf ("[%s] Dumping on level %s at %s.\n", $zfs, $lev, &time_now());
+print "\t" . $diff_msg . "\n";
 
 my $file_extension = "$lev";
 my $compression_pipe = "";
@@ -171,7 +171,7 @@ if ($lev > 0) {
 		exit 1;
 	}
 
-	print "Diff dump: level " . $difflevel . " on " . $diffdate . "\n";
+	print "\tdiff dump: level " . $difflevel . " on " . $diffdate . "\n";
 }
 
 # start dump
@@ -188,13 +188,13 @@ if ($use_ssh) {
 } else {
 	system("mv $localdir/$backupprefix.$file_extension $localdir/$backupprefix.$file_extension.old");
 }
-print "Making zfs snapshot...\n";
+print "\tmaking zfs snapshot...\n";
 system("sh", "-c", $sendcmd1);
 if ($use_ssh) {
-	print "Sending zfs snapshot to $ssh_backup_host...\n";
+	print "\tsending zfs snapshot to $ssh_backup_host...\n";
 	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe | ssh -o Compression=no " . $ssh_backup_user . "\@" . $ssh_backup_host . " 'cat - > $ssh_remotedir/$backupprefix.$file_extension'");
 } else {
-	print "Saving zfs snapshot in $localdir...\n";
+	print "\tsaving zfs snapshot in $localdir...\n";
 	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe > $localdir/$backupprefix.$file_extension");
 }
 
@@ -213,10 +213,10 @@ if (open(FILE, ">$backup_history")) {
 			my $dest_snap=$dumphistory[$d]{'snap'};
 			if (length($dest_snap)>0) {
 				if ($dest_snap eq $snapname) {
-					print "Skipping deleting $dest_snap (this is the latest backup).";
+					print "\tskipping deleting $dest_snap (this is the latest backup).";
 					next;
 				}
-				print "Deleting backup $dest_snap\n";
+				print "\tdeleting backup $dest_snap\n";
 				my $destroycmd = "/sbin/zfs destroy -f " . $zfs .
 					"@" . $dest_snap;
 				system($destroycmd);
@@ -233,7 +233,7 @@ if (open(FILE, ">$backup_history")) {
 			$dumphistory_other[$d]{'date'};
 	}
 	close(FILE);
-	print "Backuping $zfs finished.\n";
+	printf("\tbackup finished at %s.\n", &time_now());
 
 } else {
 	print STDERR "Fatal error: could not write $backup_history.\n";
@@ -308,6 +308,11 @@ sub read_configuration {
 
 		die "Unknown setting in $conf: $k\n";
 	}
+}
+
+sub time_now {
+	my $tn = localtime();
+	return $tn;
 }
 
 sub get_bool {
