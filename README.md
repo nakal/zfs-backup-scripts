@@ -191,4 +191,26 @@ has a special snapshot naming schema and only matching snapshot
 names will be counted, so you can safely make your own snapshot
 without being afraid that they will be destroyed at some time.
 
+## diff-man.sh
+
+This script takes a snapshot of its last run and compares the
+changes on the given ZFS dataset. It writes the changes to
+an output file.
+
+If you have multiple datasets and/or multiple users, you can
+send a choice of the outputs individually. You need a script
+to do this, of course.
+
+### Command line syntax
+
+```
+diff-man.sh zfs-dataset outputfile
+```
+
+* `zfs-dataset` is the ZFS dataset name to watch
+* `outputfile` is the file that contains the `zfs diff` output which may be empty
+
+When the diff is empty, the headers are also removed, so the calling
+script can detect 0-sized diffs more easily.
+
 [FreeBSD]: http://www.freebsd.org/ "FreeBSD operating system"
