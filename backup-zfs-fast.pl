@@ -58,18 +58,18 @@ if ($verbose) {
 }
 
 if ($use_gzip && $use_pigz) {
-	print "Configuration error: cannot use gzip and pigz together.\n";
+	print "*** FATAL: Configuration error, cannot use gzip and pigz together.\n";
 	exit 1;
 }
 
 if ($use_gpg && $use_aes) {
-	print "Configuration error: cannot use GPG and AES together.\n";
+	print "*** FATAL: Configuration error, cannot use GPG and AES together.\n";
 	exit 1;
 }
 
 if ($use_aes) {
 	if (!defined($aes_passfile) || !-r $aes_passfile) {
-		print "Configuration error: AES needs aes_passfile.\n";
+		print "*** FATAL: Configuration error, AES needs aes_passfile.\n";
 		exit 1;
 	}
 }
@@ -77,7 +77,7 @@ if ($use_aes) {
 if ($use_ssh && $ssh_ping_backup_host) {
 	my $ping = system("/sbin/ping -q -c 1 -t 1 $ssh_backup_host > /dev/null");
 	if ($ping != 0) {
-		print "Backup destination host $ssh_backup_host not online.\n";
+		print "*** ABORTED: Backup destination host $ssh_backup_host not online.\n";
 		exit(1);
 	}
 }
@@ -111,22 +111,23 @@ if (open(FILE, $backup_history)) {
 	}
 	close(FILE);
 } else {
-	print STDERR "Warning: $backup_history does not exist.\n";
+	print STDERR "WARNING: $backup_history does not exist.\n";
 }
 
 my $firstbackup = 0;
 my $diff_msg = "";
 if (scalar(@dumphistory)<1) {
-	$diff_msg = "no last dump found, forcing level 0 backup";
+	$diff_msg = "not found, forcing level 0 backup";
 	$lev = 0;
 	$firstbackup = 1;
 } else {
 	my %l = %{$dumphistory[scalar(@dumphistory)-1]};
-	$diff_msg = "last dump: level " . $l{'lev'} . " on " . $l{'date'}
+	$diff_msg = "level " . $l{'lev'} . " on " . $l{'date'}
 }
 
-printf ("[%s] Dumping on level %s at %s.\n", $zfs, $lev, &time_now());
-print "\t" . $diff_msg . "\n";
+printf ("[%s] Backup started at %s.\n", $zfs, &time_now());
+printf ("\tthis: level %s %s\n", $lev, $timenow);
+print "\tlast: " . $diff_msg . "\n";
 
 my $file_extension = "$lev";
 my $compression_pipe = "";
@@ -167,7 +168,7 @@ if ($lev > 0) {
 	}
 
 	if ($difflevel == 10) {
-		print STDERR "Fatal: no previous diff dump found in table.\n";
+		print STDERR "*** FATAL: No previous diff dump found in table.\n";
 		exit 1;
 	}
 
@@ -188,13 +189,13 @@ if ($use_ssh) {
 } else {
 	system("mv $localdir/$backupprefix.$file_extension $localdir/$backupprefix.$file_extension.old");
 }
-print "\tmaking zfs snapshot...\n";
+print "\tmaking snapshot...\n";
 system("sh", "-c", $sendcmd1);
 if ($use_ssh) {
-	print "\tsending zfs snapshot to $ssh_backup_host...\n";
+	print "\tsending to: $ssh_backup_host\n";
 	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe | ssh -o Compression=no " . $ssh_backup_user . "\@" . $ssh_backup_host . " 'cat - > $ssh_remotedir/$backupprefix.$file_extension'");
 } else {
-	print "\tsaving zfs snapshot in $localdir...\n";
+	print "\tsaving in: $localdir\n";
 	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe > $localdir/$backupprefix.$file_extension");
 }
 
@@ -216,7 +217,7 @@ if (open(FILE, ">$backup_history")) {
 					print "\tskipping deleting $dest_snap (this is the latest backup).";
 					next;
 				}
-				print "\tdeleting backup $dest_snap\n";
+				print "\tdeleting backup: $dest_snap\n";
 				my $destroycmd = "/sbin/zfs destroy -f " . $zfs .
 					"@" . $dest_snap;
 				system($destroycmd);
@@ -233,10 +234,10 @@ if (open(FILE, ">$backup_history")) {
 			$dumphistory_other[$d]{'date'};
 	}
 	close(FILE);
-	printf("\tbackup finished at %s.\n", &time_now());
+	printf("\tfinished at: %s\n", &time_now());
 
 } else {
-	print STDERR "Fatal error: could not write $backup_history.\n";
+	print STDERR "*** FATAL: Could not write $backup_history.\n";
 	exit 1;
 }
 
@@ -246,7 +247,7 @@ sub read_configuration {
 	my ($conf) = @_;
 
 	my %cfg = ();
-	Config::Simple->import_from($conf, \%cfg) || die "Cannot read configuration $conf\n";
+	Config::Simple->import_from($conf, \%cfg) || die "*** FATAL: Cannot read configuration $conf\n";
 
 	foreach my $k (keys %cfg) {
 		if ($k eq "use_ssh") {
