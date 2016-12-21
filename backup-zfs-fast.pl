@@ -125,7 +125,7 @@ if (scalar(@dumphistory)<1) {
 	$diff_msg = "level " . $l{'lev'} . " on " . $l{'date'}
 }
 
-printf ("[%s] Backup started at %s.\n", $zfs, &time_now());
+printf ("[%s:%s] Backup started at %s.\n", $backupprefix, $zfs, &time_now());
 printf ("\tthis: level %s %s\n", $lev, $timenow);
 print "\tlast: " . $diff_msg . "\n";
 
@@ -172,7 +172,7 @@ if ($lev > 0) {
 		exit 1;
 	}
 
-	print "\tdiff dump: level " . $difflevel . " on " . $diffdate . "\n";
+	print "\tdiff: level " . $difflevel . " on " . $diffdate . "\n";
 }
 
 # start dump
