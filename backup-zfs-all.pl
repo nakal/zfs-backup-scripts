@@ -19,7 +19,7 @@ my ($pool, $hostname, $lev) = @ARGV;
 &read_ignore_list($ignorelist) if (defined $ignorelist);
 
 # Get list of ZFS filesystems
-my @out = `/sbin/zfs list -r "$pool" | /usr/bin/egrep "^$pool([ /])" | /usr/bin/sed "s/ .*//"`;
+my @out = `/sbin/zfs list -H -o name -r "$pool"`;
 
 # or override auto-detection and back just one dataset
 #@out = ("pool/var/log");
@@ -46,7 +46,7 @@ foreach (sort @out) {
 	my $fs_flat = $fs;
 	$fs_flat =~ s/\//-/g;
 
-	system("/usr/bin/lockf -s -t 0 $pidfile \"$dirname/backup-zfs-fast.pl\"$cfgparam $fs $hostname-$fs_flat $lev");
+	system("/usr/bin/lockf -s -t 0 $pidfile /usr/bin/nice \"$dirname/backup-zfs-fast.pl\"$cfgparam $fs $hostname-$fs_flat $lev");
 }
 
 exit(0);
