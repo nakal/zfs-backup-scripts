@@ -11,11 +11,11 @@ my @skipfs = ();
 my $ignorelist = undef;
 my $cfgfile = undef;
 
-&usage() if (scalar(@ARGV)<3);
+&usage() if (scalar(@ARGV)<2);
 @ARGV = &try_opt_arg(@ARGV);
-&usage() if (scalar(@ARGV)!=3);
+&usage() if (scalar(@ARGV)!=2);
 
-my ($pool, $hostname, $lev) = @ARGV;
+my ($pool, $hostname) = @ARGV;
 &read_ignore_list($ignorelist) if (defined $ignorelist);
 
 # Get list of ZFS filesystems
@@ -46,7 +46,7 @@ foreach (sort @out) {
 	my $fs_flat = $fs;
 	$fs_flat =~ s/\//-/g;
 
-	system("/usr/bin/lockf -s -t 0 $pidfile /usr/bin/nice \"$dirname/backup-zfs-fast.pl\"$cfgparam $fs $hostname-$fs_flat $lev");
+	system("/usr/bin/lockf -s -t 0 $pidfile /usr/bin/nice \"$dirname/backup-zfs-fast.pl\"$cfgparam $fs $hostname-$fs_flat");
 }
 
 exit(0);
@@ -83,7 +83,7 @@ sub read_ignore_list {
 }
 
 sub usage {
-        die "Usage: backup-zfs-all.pl [ -i ignorelist ] [ -c backup-configuration ] poolname hostname level\n";
+        die "Usage: backup-zfs-all.pl [ -i ignorelist ] [ -c backup-configuration ] poolname hostname\n";
 }
 
 sub try_opt_arg {

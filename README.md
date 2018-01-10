@@ -16,7 +16,8 @@ information on what they are doing.
 ## backup-zfs-fast.pl
 
 This script backups exactly one ZFS dataset. It supports incremental
-backups.
+backups. The backup levels are calculated automatically. A level 0
+backup is performed every 4 weeks.
 
 ### Prerequisites
 
@@ -27,17 +28,16 @@ Please make sure, you adapt the absolute paths of the required
 utilities in the script. The settings are prepared for
 [FreeBSD][] operating system.
 
-If you want to use `pigz` or `gnupg`, please install the packages.
+If you want to use `pigz` or `gnupg`, please install the relevant packages.
 
 ### Command line syntax
 
 ```
-backup-zfs-fast.pl [ -c configpath ] zfsname prefix backuplevel
+backup-zfs-fast.pl [ -c configpath ] zfsname prefix
 ```
 
 `zfsname` is the dataset to backup. `prefix` is the filename prefix for the
-backup file. And the backup level is a number from `0` (full backup) to `9`
-(9th level backup).
+backup file. Call the command with `nice` to avoid spikes in load.
 
 ### Configuration<a name="backupconf"></a>
 
@@ -130,12 +130,11 @@ you are not using [FreeBSD][].
 ### Command line syntax
 
 ```
-backup-zfs-all.pl [ -i ignorelist ] [ -c backup-configuration ] poolname hostname level
+backup-zfs-all.pl [ -i ignorelist ] [ -c backup-configuration ] poolname hostname
 ```
 
 `poolname` is the pool which is to be handled. `hostname` will be used for
-building the backup name prefix. `level` is the backup level to use (`0` full
-backup, `9` is the 9th level).
+building the backup name prefix.
 
 The `backup-configuration` is optional, but almost always needed and will
 be passed to `backup-zfs-fast.pl` as parameter. The format is explained

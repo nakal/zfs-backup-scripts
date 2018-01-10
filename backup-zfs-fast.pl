@@ -3,9 +3,9 @@
 use warnings;
 use strict;
 use Config::Simple;
+use Time::Piece;
 
 # configure this (for your system distribution)
-my $backup_history = "/var/db/backup-zfs-history";
 my $gpg_path = "/usr/local/bin/gpg";
 my $pigz_path = "/usr/local/bin/pigz";
 my $gzip_path = "/usr/bin/gzip";
@@ -34,9 +34,9 @@ if ($ARGV[0] eq "-c") {
 	$config_path = $ARGV[1];
 	shift; shift;
 }
-&show_usage() if (scalar(@ARGV)!=3);
+&show_usage() if (scalar(@ARGV) != 2);
 
-my ($zfs, $backupprefix, $lev) = @ARGV;
+my ($zfs, $backupprefix) = @ARGV;
 
 &read_configuration($config_path) if (defined ($config_path));
 
@@ -89,55 +89,90 @@ my @loctim = localtime;
 my $timenow = sprintf ("%04d-%02d-%02d", $loctim[5]+1900, $loctim[4]+1,
 	$loctim[3]);
 
-# read backup history DB
-my $FILE;
-if (open(FILE, $backup_history)) {
-	while (<FILE>) {
-		if (m/^([^ ]*) ([^ ]*) ([^ ]*) ([^ \n\r]*)$/) {
-			my %hash = (
-				'zfs' => $1,
-				'snap' => $2,
-				'lev' => $3,
-				'date' => $4,
-				);
-			# print $hash{'zfs'} . "\n";
-			# print $hash{'snap'} . "\n";
-			if ($hash{'zfs'} eq $zfs) {
-				push @dumphistory, {%hash};
-			} else {
-				push @dumphistory_other, {%hash};
+# read backup history
+my @zfs_history = `zfs list -t snapshot -Hr -o name $zfs`;
+if ($? != 0) {
+	print "*** FATAL: Failed to list snapshots for $zfs\n";
+	exit(1);
+}
+
+my $keep_backups = 3;
+my %level_backups = ();
+my $date_last = "2000-01-01";
+my $lev_last = 0;
+foreach (@zfs_history) {
+	if (m/^$zfs\@L([0-9])-([0-9-]*)$/) {
+		my ($l, $d) = ($1, $2);
+		push @{$level_backups{$l}}, $d;
+		($lev_last, $date_last) = ($l, $d) if ($date_last lt $d);
+	}
+	if (m/^$zfs\@L([0-9])-([0-9-]*)-tmp$/) {
+		my ($l, $d) = ($1, $2);
+		my $ret = system("/sbin/zfs", "destroy", "$zfs\@L$l-$d-tmp");
+		if ($ret != 0) {
+			printf("*** ERROR: Could not delete stale snapshot L%d-%s\n", $l, $d);
+		} else {
+			printf("*** WARNING: Deleted stale snapshot L%d-%s\n", $l, $d);
+		}
+	}
+}
+
+while (my ($l, $ds) = each(%level_backups)) {
+	@{$ds} = sort {$b cmp $a} @{$ds};
+}
+
+my $diff_msg = "";
+my $lev = 0;
+my $diff_level = 0;
+my $diff_date = "2000-01-01";
+if (scalar(keys %level_backups) < 1) {
+	$diff_msg = "not found, forcing level 0 backup";
+} else {
+	$diff_msg = "level " . $lev_last . " on " . $date_last;
+
+	my %next_lev_map = (
+		0, 4,
+		4, 3,
+		3, 2,
+		2, 7,
+		7, 6,
+		6, 5,
+		5, 1,
+		1, 4
+	);
+	if (defined($next_lev_map{$lev_last})) {
+		$lev = $next_lev_map{$lev_last};
+	}
+}
+
+# Check the date of the last level 0 backup
+if ($lev != 0) {
+	my ($date_lev0) = @{$level_backups{0}};
+	my $ts_last = Time::Piece->strptime($timenow, '%Y-%m-%d') -
+	 Time::Piece->strptime($date_lev0, '%Y-%m-%d');
+	if ($ts_last >= 2400000) {
+		$lev = 0;
+	} else {
+		while (my ($l, $ds) = each(%level_backups)) {
+			foreach (@{$ds}) {
+				my $d = $_;
+				($diff_level, $diff_date) = ($l, $d) if (($l < $lev) and ($diff_date lt $d));
 			}
 		}
 	}
-	close(FILE);
-} else {
-	print STDERR "WARNING: $backup_history does not exist.\n";
 }
 
-my $firstbackup = 0;
-my $diff_msg = "";
-if (scalar(@dumphistory)<1) {
-	$diff_msg = "not found, forcing level 0 backup";
-	$lev = 0;
-	$firstbackup = 1;
-} else {
-	my %l = %{$dumphistory[scalar(@dumphistory)-1]};
-	$diff_msg = "level " . $l{'lev'} . " on " . $l{'date'}
-}
-
-printf ("[%s:%s] Backup started at %s.\n", $backupprefix, $zfs, &time_now());
-printf ("\tthis: level %s %s\n", $lev, $timenow);
+printf ("[%s:%s] Backup started on %s.\n", $backupprefix, $zfs, &time_now());
+printf ("\tthis: level %s on %s\n", $lev, $timenow);
 print "\tlast: " . $diff_msg . "\n";
 
-my $file_extension = "$lev";
+my $file_extension = "gz";
 my $compression_pipe = "";
 my $encrypt_pipe = "";
 if ($use_pigz) {
-	$file_extension .= ".gz";
 	$compression_pipe = "| $pigz_path -c -p $pigz_cpu_num ";
 }
 if ($use_gzip) {
-	$file_extension .= ".gz";
 	$compression_pipe = "| $gzip_path -c ";
 }
 if ($use_gpg) {
@@ -149,96 +184,121 @@ if ($use_aes) {
 	$encrypt_pipe = "| $openssl_path aes-128-cbc -e -kfile $aes_passfile";
 }
 
-my $snapname = sprintf ("L%1d-%s", $lev, $timenow);
+my $snapname = sprintf("L%1d-%s", $lev, $timenow);
+my $diffsnap = sprintf("L%1d-%s", $diff_level, $diff_date);
 
-# calculate diff level
-
-my $difflevel = 10;
-my $diffsnap = "";
 if ($lev > 0) {
-	my $d;
-	my $diffdate;
-	for ($d = $#dumphistory; $d>=0; $d--) {
-		if ($dumphistory[$d]{'lev'}<$lev) {
-			$difflevel = $dumphistory[$d]{'lev'};
-			$diffsnap = $dumphistory[$d]{'snap'};
-			$diffdate = $dumphistory[$d]{'date'};
-			last;
-		}
-	}
-
-	if ($difflevel == 10) {
-		print STDERR "*** FATAL: No previous diff dump found in table.\n";
-		exit 1;
-	}
-
-	print "\tdiff: level " . $difflevel . " on " . $diffdate . "\n";
+	print "\tdiff: level " . $diff_level . " on " . $diff_date . "\n";
+} else {
+	print "\tinfo: forcing full backup\n";
 }
 
-# start dump
-my $sendcmd1 = "/sbin/zfs snapshot " . $zfs . "@" . $snapname;
+# remote file name for current backup
+my $backupname = sprintf("%s-%s.%s", $backupprefix, $snapname, $file_extension);
+
+# remote backup mask to extract recent backups on current level
+my $backupmask = sprintf("%s-L%d-*.%s*", $backupprefix, $lev, $file_extension);
+
+# Get a list of backups on the remote side for the current level
+my @output = ();
+if ($use_ssh) {
+	@output = `ssh -o Compression=no $ssh_backup_user\@$ssh_backup_host /bin/ls -1 $ssh_remotedir/$backupmask`;
+} else {
+	@output = `/bin/ls -1 $localdir/$backupmask`;
+}
+
+# Tidy up backups on the remote side
+my @remote_backups = ();
+foreach (@output) {
+	# extract date
+	if (m/$backupprefix-L$lev-([0-9-]*)\.$file_extension$/) {
+		push @remote_backups, $1;
+	} elsif (m/$backupprefix-L$lev-([0-9-]*)\.$file_extension\.tmp$/) {
+		my $d = $1;
+		# remove stale (unfinished) backups directly
+		my $ret;
+		if ($use_ssh) {
+			$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
+					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev-$d.$file_extension.tmp");
+		} else {
+			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev-$d.$file_extension");
+		}
+		printf($ret == 0 ? "\t*** WARNING: deleting stale backup L%d-%s\n" :
+				"\t*** ERROR: failed to delete stale backup L%d-%s\n", $lev, $d);
+	}
+}
+if (scalar(@remote_backups) >= $keep_backups) {
+	@remote_backups = sort @remote_backups;
+
+	for (my $i = 0; $i < $keep_backups - 1; $i++) {
+		pop @remote_backups;
+	}
+
+	# make space for new backup by keeping <keep_backups - 1> latest ones for the current level
+	foreach (@remote_backups) {
+		my $n = $_;
+		my $ret;
+		if ($use_ssh) {
+			$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
+					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev-$n.$file_extension");
+		} else {
+			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev-$n.$file_extension");
+		}
+		if ($ret != 0) {
+			printf("\t*** WARNING: Could not delete old backup %s-L%d-%s.%s\n",
+				$backupprefix, $lev, $n, $file_extension);
+		}
+	}
+}
+
+# Tidy up snapshots on the local side
+my @local_backups = sort(@{$level_backups{$lev}});
+for (my $i = 0; $i < $keep_backups - 1; $i++) {
+	pop @local_backups;
+}
+foreach (@local_backups) {
+	my $d = $_;
+	my $ret = system("/sbin/zfs", "destroy", "$zfs\@L$lev-$d");
+	if ($ret != 0) {
+		printf("\t*** WARNING: Could not delete old snapshot L%d-%s\n",
+			$lev, $d);
+	}
+}
+
+# Construct command for ZFS send
+my $sendcmd1 = "/sbin/zfs snapshot " . $zfs . "@" . $snapname . "-tmp";
 my $sendcmd2;
 if ($lev == 0) {
-	$sendcmd2 = "/sbin/zfs send " . $zfs . "@" . $snapname;
+	$sendcmd2 = "/sbin/zfs send " . $zfs . "@" . $snapname . "-tmp";
 } else {
-	$sendcmd2 = "/sbin/zfs send -i $diffsnap " . $zfs . "@" . $snapname;
+	$sendcmd2 = "/sbin/zfs send -i $diffsnap " . $zfs . "@" . $snapname . "-tmp";
 }
 
-if ($use_ssh) {
-	system("ssh", "-o", "Compression=no", $ssh_backup_user . "\@" . $ssh_backup_host, "mv $ssh_remotedir/$backupprefix.$file_extension $ssh_remotedir/$backupprefix.$file_extension.old");
-} else {
-	system("mv $localdir/$backupprefix.$file_extension $localdir/$backupprefix.$file_extension.old");
-}
 print "\tmaking snapshot...\n";
 system("sh", "-c", $sendcmd1);
+
 if ($use_ssh) {
 	print "\tsending to: $ssh_backup_host\n";
-	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe | ssh -o Compression=no " . $ssh_backup_user . "\@" . $ssh_backup_host . " 'cat - > $ssh_remotedir/$backupprefix.$file_extension'");
+	my $ret = system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe | ssh -o Compression=no " . $ssh_backup_user . "\@" . $ssh_backup_host . " 'cat - > $ssh_remotedir/$backupname.tmp'");
+	if ($ret == 0) {
+		$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
+				"/bin/mv", "$ssh_remotedir/$backupname.tmp", "$ssh_remotedir/$backupname");
+		printf($ret == 0 ? "\tOK success\n" : "\t*** ERROR (mv)\n");
+	} else {
+		printf("\t*** ERROR (during backup transfer)\n");
+	}
 } else {
 	print "\tsaving in: $localdir\n";
-	system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe > $localdir/$backupprefix.$file_extension");
+	my $ret = system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe > $localdir/$backupname.tmp");
+	if ($ret == 0) {
+		$ret = system("/bin/mv", "$localdir/$backupname.tmp", "$localdir/$backupname");
+		printf($ret == 0 ? "\tOK success\n" : "\t*** ERROR (mv)\n");
+	} else {
+		printf("\t*** ERROR (during storing backup)\n");
+	}
 }
-
-# tidy up old dumps and write out backup history DB
-if (open(FILE, ">$backup_history")) {
-
-	my $d;
-	for ($d=0; $d<scalar(@dumphistory); $d++) {
-		if ($dumphistory[$d]{'lev'}!=$lev) {
-			printf FILE "%s %s %s %s\n",
-				$dumphistory[$d]{'zfs'},
-				$dumphistory[$d]{'snap'},
-				$dumphistory[$d]{'lev'},
-				$dumphistory[$d]{'date'};
-		} else {
-			my $dest_snap=$dumphistory[$d]{'snap'};
-			if (length($dest_snap)>0) {
-				if ($dest_snap eq $snapname) {
-					print "\tskipping deleting $dest_snap (this is the latest backup).";
-					next;
-				}
-				print "\tdeleting backup: $dest_snap\n";
-				my $destroycmd = "/sbin/zfs destroy -f " . $zfs .
-					"@" . $dest_snap;
-				system($destroycmd);
-			}
-		}
-	}
-	printf FILE "%s %s %s %s\n", $zfs, $snapname, $lev, $timenow;
-
-	for ($d=0; $d<scalar(@dumphistory_other); $d++) {
-		printf FILE "%s %s %s %s\n",
-			$dumphistory_other[$d]{'zfs'},
-			$dumphistory_other[$d]{'snap'},
-			$dumphistory_other[$d]{'lev'},
-			$dumphistory_other[$d]{'date'};
-	}
-	close(FILE);
-	printf("\tfinished at: %s\n", &time_now());
-
-} else {
-	print STDERR "*** FATAL: Could not write $backup_history.\n";
-	exit 1;
+if (system("/sbin/zfs", "rename", "$zfs\@$snapname-tmp", "$zfs\@$snapname") != 0) {
+	printf("\t*** ERROR (removing -tmp suffix from snapshot)\n");
 }
 
 exit 0;
