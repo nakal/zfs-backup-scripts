@@ -27,6 +27,7 @@ my $aes_passfile = undef;
 my $use_pigz = 0;
 my $pigz_cpu_num = 3; # number of CPUs to use
 my $use_gzip = 0;
+my $keep_backups_per_level = 3;
 
 &show_usage() if (scalar(@ARGV)<3);
 
@@ -96,7 +97,6 @@ if ($? != 0) {
 	exit(1);
 }
 
-my $keep_backups = 3;
 my %level_backups = ();
 my $date_last = "2000-01-01";
 my $lev_last = 0;
@@ -227,14 +227,14 @@ foreach (@output) {
 				"\t*** ERROR: failed to delete stale backup L%d-%s\n", $lev, $d);
 	}
 }
-if (scalar(@remote_backups) >= $keep_backups) {
+if (scalar(@remote_backups) >= $keep_backups_per_level) {
 	@remote_backups = sort @remote_backups;
 
-	for (my $i = 0; $i < $keep_backups - 1; $i++) {
+	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
 		pop @remote_backups;
 	}
 
-	# make space for new backup by keeping <keep_backups - 1> latest ones for the current level
+	# make space for new backup by keeping <keep_backups_per_level - 1> latest ones for the current level
 	foreach (@remote_backups) {
 		my $n = $_;
 		my $ret;
@@ -253,7 +253,7 @@ if (scalar(@remote_backups) >= $keep_backups) {
 
 # Tidy up snapshots on the local side
 my @local_backups = sort(@{$level_backups{$lev}});
-for (my $i = 0; $i < $keep_backups - 1; $i++) {
+for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
 	pop @local_backups;
 }
 foreach (@local_backups) {
@@ -332,6 +332,10 @@ sub read_configuration {
 		}
 		if ($k eq "local_dir") {
 			$localdir = $cfg{$k};
+			next;
+		}
+		if ($k eq "keep_backups_per_level") {
+			$keep_backups_per_level = $cfg{$k};
 			next;
 		}
 		if ($k eq "use_gpg") {

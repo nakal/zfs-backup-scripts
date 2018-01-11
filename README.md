@@ -76,6 +76,16 @@ Note that it might be also an NFS mountpoint.
 local_dir /path/to/backup/directory
 ```
 
+#### Backup history
+
+The number of backups/snapshots that are kept for each level
+can be configured with. `3` is default, which implies almost 3
+months for level 0 backup. Watch the available disk space!
+
+```
+keep_backups_per_level 3
+```
+
 #### Compression options
 
 It is possible to compress the backup on-the-fly using `pigz` or
