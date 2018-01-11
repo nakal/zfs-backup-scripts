@@ -183,10 +183,6 @@ if ($use_aes) {
 	$file_extension .= ".aes";
 	$encrypt_pipe = "| $openssl_path aes-128-cbc -e -kfile $aes_passfile";
 }
-
-my $snapname = sprintf("L%1d-%s", $lev, $timenow);
-my $diffsnap = sprintf("L%1d-%s", $diff_level, $diff_date);
-
 if ($lev > 0) {
 	print "\tdiff: level " . $diff_level . " on " . $diff_date . "\n";
 } else {
@@ -194,10 +190,10 @@ if ($lev > 0) {
 }
 
 # remote file name for current backup
-my $backupname = sprintf("%s-%s.%s", $backupprefix, $snapname, $file_extension);
+my $backupname = sprintf("%s-L%1dD%1d-%s.%s", $backupprefix, $lev, $diff_level, $timenow, $file_extension);
 
 # remote backup mask to extract recent backups on current level
-my $backupmask = sprintf("%s-L%d-*.%s*", $backupprefix, $lev, $file_extension);
+my $backupmask = sprintf("%s-L%dD?-*.%s*", $backupprefix, $lev, $file_extension);
 
 # Get a list of backups on the remote side for the current level
 my @output = ();
@@ -211,24 +207,26 @@ if ($use_ssh) {
 my @remote_backups = ();
 foreach (@output) {
 	# extract date
-	if (m/$backupprefix-L$lev-([0-9-]*)\.$file_extension$/) {
+	if (m/$backupprefix-L$lev(D[0-9]-[0-9-]*)\.$file_extension$/) {
 		push @remote_backups, $1;
-	} elsif (m/$backupprefix-L$lev-([0-9-]*)\.$file_extension\.tmp$/) {
+	} elsif (m/$backupprefix-L$lev(D[0-9]-[0-9-]*)\.$file_extension\.tmp$/) {
 		my $d = $1;
 		# remove stale (unfinished) backups directly
 		my $ret;
 		if ($use_ssh) {
 			$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev-$d.$file_extension.tmp");
+					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev$d.$file_extension.tmp");
 		} else {
-			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev-$d.$file_extension");
+			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev$d.$file_extension");
 		}
-		printf($ret == 0 ? "\t*** WARNING: deleting stale backup L%d-%s\n" :
-				"\t*** ERROR: failed to delete stale backup L%d-%s\n", $lev, $d);
+		printf($ret == 0 ? "\t*** WARNING: Deleting stale backup L%d%s\n" :
+				"\t*** WARNING: FAILED TO DELETE stale backup L%d%s\n", $lev, $d);
 	}
 }
 if (scalar(@remote_backups) >= $keep_backups_per_level) {
-	@remote_backups = sort @remote_backups;
+	@remote_backups = sort {
+		substr($a, 3) cmp substr($b, 3) || substr($b, 1, 1) cmp substr($a, 1, 1)
+	} @remote_backups;
 
 	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
 		pop @remote_backups;
@@ -240,42 +238,50 @@ if (scalar(@remote_backups) >= $keep_backups_per_level) {
 		my $ret;
 		if ($use_ssh) {
 			$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev-$n.$file_extension");
+					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev$n.$file_extension");
 		} else {
-			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev-$n.$file_extension");
+			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev$n.$file_extension");
 		}
 		if ($ret != 0) {
-			printf("\t*** WARNING: Could not delete old backup %s-L%d-%s.%s\n",
+			printf("\t*** WARNING: Could not delete old backup %s-L%d%s.%s\n",
 				$backupprefix, $lev, $n, $file_extension);
 		}
 	}
 }
 
 # Tidy up snapshots on the local side
-my @local_backups = sort(@{$level_backups{$lev}});
-for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
-	pop @local_backups;
-}
-foreach (@local_backups) {
-	my $d = $_;
-	my $ret = system("/sbin/zfs", "destroy", "$zfs\@L$lev-$d");
-	if ($ret != 0) {
-		printf("\t*** WARNING: Could not delete old snapshot L%d-%s\n",
-			$lev, $d);
+if (defined($level_backups{$lev})) {
+	my @local_backups = sort(@{$level_backups{$lev}});
+	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
+		pop @local_backups;
+	}
+	foreach (@local_backups) {
+		my $d = $_;
+		my $ret = system("/sbin/zfs", "destroy", "$zfs\@L$lev-$d");
+		if ($ret != 0) {
+			printf("\t*** WARNING: Could not delete old snapshot L%d-%s\n",
+					$lev, $d);
+		}
 	}
 }
 
 # Construct command for ZFS send
+my $snapname = sprintf("L%1d-%s", $lev, $timenow);
 my $sendcmd1 = "/sbin/zfs snapshot " . $zfs . "@" . $snapname . "-tmp";
 my $sendcmd2;
 if ($lev == 0) {
 	$sendcmd2 = "/sbin/zfs send " . $zfs . "@" . $snapname . "-tmp";
 } else {
+	my $diffsnap = sprintf("L%1d-%s", $diff_level, $diff_date);
 	$sendcmd2 = "/sbin/zfs send -i $diffsnap " . $zfs . "@" . $snapname . "-tmp";
 }
 
 print "\tmaking snapshot...\n";
-system("sh", "-c", $sendcmd1);
+my $ret = system("sh", "-c", $sendcmd1);
+if ($ret != 0) {
+	printf("\t*** FATAL: Failed to make snapshot $snapname-tmp\n");
+	exit(1);
+}
 
 if ($use_ssh) {
 	print "\tsending to: $ssh_backup_host\n";
@@ -283,22 +289,27 @@ if ($use_ssh) {
 	if ($ret == 0) {
 		$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
 				"/bin/mv", "$ssh_remotedir/$backupname.tmp", "$ssh_remotedir/$backupname");
-		printf($ret == 0 ? "\tOK success\n" : "\t*** ERROR (mv)\n");
+		printf($ret == 0 ? "\tOK success\n" : "\t*** FATAL: Failed to rename backup (mv)\n");
+		exit(1) if ($ret != 0);
 	} else {
-		printf("\t*** ERROR (during backup transfer)\n");
+		printf("\t*** FATAL: Backup transfer failed\n");
+		exit(1);
 	}
 } else {
 	print "\tsaving in: $localdir\n";
 	my $ret = system("sh", "-c", "$sendcmd2 $compression_pipe $encrypt_pipe > $localdir/$backupname.tmp");
 	if ($ret == 0) {
 		$ret = system("/bin/mv", "$localdir/$backupname.tmp", "$localdir/$backupname");
-		printf($ret == 0 ? "\tOK success\n" : "\t*** ERROR (mv)\n");
+		printf($ret == 0 ? "\tOK success\n" : "\t*** FATAL: Failed to rename backup (mv)\n");
+		exit(1) if ($ret != 0);
 	} else {
-		printf("\t*** ERROR (during storing backup)\n");
+		printf("\t*** FATAL: Failed to store backup\n");
+		exit(1);
 	}
 }
 if (system("/sbin/zfs", "rename", "$zfs\@$snapname-tmp", "$zfs\@$snapname") != 0) {
-	printf("\t*** ERROR (removing -tmp suffix from snapshot)\n");
+	printf("\t*** FATAL: Failed to rename snapshot (remove -tmp suffix)\n");
+	exit(1);
 }
 
 exit 0;
