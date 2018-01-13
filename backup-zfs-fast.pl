@@ -147,18 +147,22 @@ if (scalar(keys %level_backups) < 1) {
 
 # Check the date of the last level 0 backup
 if ($lev != 0) {
-	my ($date_lev0) = @{$level_backups{0}};
-	my $ts_last = Time::Piece->strptime($timenow, '%Y-%m-%d') -
-	 Time::Piece->strptime($date_lev0, '%Y-%m-%d');
-	if ($ts_last >= 2400000) {
-		$lev = 0;
-	} else {
-		while (my ($l, $ds) = each(%level_backups)) {
-			foreach (@{$ds}) {
-				my $d = $_;
-				($diff_level, $diff_date) = ($l, $d) if (($l < $lev) and ($diff_date lt $d));
+	if (defined($level_backups{0})) {
+		my ($date_lev0) = @{$level_backups{0}};
+		my $ts_last = Time::Piece->strptime($timenow, '%Y-%m-%d') -
+		 Time::Piece->strptime($date_lev0, '%Y-%m-%d');
+		if ($ts_last >= 2400000) {
+			$lev = 0;
+		} else {
+			while (my ($l, $ds) = each(%level_backups)) {
+				foreach (@{$ds}) {
+					my $d = $_;
+					($diff_level, $diff_date) = ($l, $d) if (($l < $lev) and ($diff_date lt $d));
+				}
 			}
 		}
+	} else {
+		$lev = 0;
 	}
 }
 
