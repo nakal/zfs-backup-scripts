@@ -265,10 +265,10 @@ if (defined($level_backups{$lev})) {
 	}
 	foreach (@local_backups) {
 		my $d = $_;
-		my $ret = system("/sbin/zfs", "destroy", "$zfs\@L$lev-$d");
+		my $ret = system("/sbin/zfs", "destroy", "$zfs\@$d-L$lev");
 		if ($ret != 0) {
-			printf("\t*** WARNING: Could not delete old snapshot L%d-%s\n",
-					$lev, $d);
+			printf("\t*** WARNING: Could not delete old snapshot %s-L%d\n",
+					$d, $lev);
 		}
 	}
 }
@@ -280,7 +280,7 @@ my $sendcmd2;
 if ($lev == 0) {
 	$sendcmd2 = "/sbin/zfs send " . $zfs . "@" . $snapname . "-tmp";
 } else {
-	my $diffsnap = sprintf("L%1d-%s", $diff_level, $diff_date);
+	my $diffsnap = sprintf("%s-L%1d", $diff_date, $diff_level);
 	$sendcmd2 = "/sbin/zfs send -i $diffsnap " . $zfs . "@" . $snapname . "-tmp";
 }
 
