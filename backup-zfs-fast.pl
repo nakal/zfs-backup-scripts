@@ -90,6 +90,8 @@ my @loctim = localtime;
 my $timenow = sprintf ("%04d-%02d-%02d", $loctim[5]+1900, $loctim[4]+1,
 	$loctim[3]);
 
+printf ("[%s:%s] Backup started on %s.\n", $backupprefix, $zfs, &time_now());
+
 # read backup history
 my @zfs_history = `zfs list -t snapshot -Hr -o name $zfs`;
 if ($? != 0) {
@@ -101,18 +103,18 @@ my %level_backups = ();
 my $date_last = "2000-01-01";
 my $lev_last = 0;
 foreach (@zfs_history) {
-	if (m/^$zfs\@L([0-9])-([0-9-]*)$/) {
-		my ($l, $d) = ($1, $2);
+	if (m/^$zfs\@([0-9]{4}-[0-9]{2}-[0-9]{2})-L([0-9])$/) {
+		my ($l, $d) = ($2, $1);
 		push @{$level_backups{$l}}, $d;
 		($lev_last, $date_last) = ($l, $d) if ($date_last lt $d);
 	}
-	if (m/^$zfs\@L([0-9])-([0-9-]*)-tmp$/) {
-		my ($l, $d) = ($1, $2);
-		my $ret = system("/sbin/zfs", "destroy", "$zfs\@L$l-$d-tmp");
+	if (m/^$zfs\@([0-9]{4}-[0-9]{2}-[0-9]{2})-L([0-9])-tmp$/) {
+		my ($l, $d) = ($2, $1);
+		my $ret = system("/sbin/zfs", "destroy", "$zfs\@$d-L$l-tmp");
 		if ($ret != 0) {
-			printf("*** ERROR: Could not delete stale snapshot L%d-%s\n", $l, $d);
+			printf("*** ERROR: Could not delete stale snapshot %s-L%d\n", $d, $l);
 		} else {
-			printf("*** WARNING: Deleted stale snapshot L%d-%s\n", $l, $d);
+			printf("*** WARNING: Deleted stale snapshot %s-L%d\n", $d, $l);
 		}
 	}
 }
@@ -166,7 +168,6 @@ if ($lev != 0) {
 	}
 }
 
-printf ("[%s:%s] Backup started on %s.\n", $backupprefix, $zfs, &time_now());
 printf ("\tthis: level %s on %s\n", $lev, $timenow);
 print "\tlast: " . $diff_msg . "\n";
 
@@ -195,11 +196,11 @@ if ($lev > 0) {
 
 # remote file name for current backup
 my $backupname = $lev == 0 ?
-	sprintf("%s-L%1dDF-%s.%s", $backupprefix, $lev, $timenow, $file_extension) :
-	sprintf("%s-L%1dD%1d-%s.%s", $backupprefix, $lev, $diff_level, $timenow, $file_extension);
+	sprintf("%s-%s-L%1dDF.%s", $backupprefix, $timenow, $lev, $file_extension) :
+	sprintf("%s-%s-L%1dD%1d.%s", $backupprefix, $timenow, $lev, $diff_level, $file_extension);
 
 # remote backup mask to extract recent backups on current level
-my $backupmask = sprintf("%s-L%dD?-*.%s*", $backupprefix, $lev, $file_extension);
+my $backupmask = sprintf("%s-????-??-??-L%1dD?.%s*", $backupprefix, $lev, $file_extension);
 
 # Get a list of backups on the remote side for the current level
 my @output = ();
@@ -213,27 +214,26 @@ if ($use_ssh) {
 my @remote_backups = ();
 foreach (@output) {
 	# extract date
-	if (m/$backupprefix-L$lev(D[0-9F]-[0-9-]*)\.$file_extension$/) {
+	if (m/$backupprefix-([0-9-]*-L${lev}D[0-9F])\.$file_extension$/) {
 		push @remote_backups, $1;
-	} elsif (m/$backupprefix-L$lev(D[0-9F]-[0-9-]*)\.$file_extension\.tmp$/) {
+	} elsif (m/$backupprefix-([0-9-]*-L${lev}D[0-9F])\.$file_extension\.tmp$/) {
 		my $d = $1;
 		# remove stale (unfinished) backups directly
 		my $ret;
 		if ($use_ssh) {
 			$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev$d.$file_extension.tmp");
+					"/bin/rm", "$ssh_remotedir/$backupprefix-$d.$file_extension.tmp");
 		} else {
-			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev$d.$file_extension");
+			$ret = system("/bin/rm", "$localdir/$backupprefix-$d.$file_extension");
 		}
-		printf($ret == 0 ? "\t*** WARNING: Deleting stale backup L%d%s\n" :
-				"\t*** WARNING: FAILED TO DELETE stale backup L%d%s\n", $lev, $d);
+		printf($ret == 0 ? "\t*** WARNING: Deleting stale backup %s\n" :
+				"\t*** WARNING: FAILED TO DELETE stale backup %s\n", $d);
 	}
 }
 if (scalar(@remote_backups) >= $keep_backups_per_level) {
-	@remote_backups = sort {
-		substr($a, 3) cmp substr($b, 3) || substr($b, 1, 1) cmp substr($a, 1, 1)
-	} @remote_backups;
 
+	# delete backups NOT to be deleted
+	@remote_backups = sort @remote_backups;
 	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
 		pop @remote_backups;
 	}
@@ -244,19 +244,21 @@ if (scalar(@remote_backups) >= $keep_backups_per_level) {
 		my $ret;
 		if ($use_ssh) {
 			$ret = system("ssh", "-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-					"/bin/rm", "$ssh_remotedir/$backupprefix-L$lev$n.$file_extension");
+					"/bin/rm", "$ssh_remotedir/$backupprefix-$n.$file_extension");
 		} else {
-			$ret = system("/bin/rm", "$localdir/$backupprefix-L$lev$n.$file_extension");
+			$ret = system("/bin/rm", "$localdir/$backupprefix-$n.$file_extension");
 		}
 		if ($ret != 0) {
-			printf("\t*** WARNING: Could not delete old backup %s-L%d%s.%s\n",
-				$backupprefix, $lev, $n, $file_extension);
+			printf("\t*** WARNING: Could not delete old backup %s-%s.%s\n",
+				$backupprefix, $n, $file_extension);
 		}
 	}
 }
 
 # Tidy up snapshots on the local side
 if (defined($level_backups{$lev})) {
+
+	# delete snapshots NOT to be deleted
 	my @local_backups = sort(@{$level_backups{$lev}});
 	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
 		pop @local_backups;
@@ -272,7 +274,7 @@ if (defined($level_backups{$lev})) {
 }
 
 # Construct command for ZFS send
-my $snapname = sprintf("L%1d-%s", $lev, $timenow);
+my $snapname = sprintf("%s-L%1d", $timenow, $lev);
 my $sendcmd1 = "/sbin/zfs snapshot " . $zfs . "@" . $snapname . "-tmp";
 my $sendcmd2;
 if ($lev == 0) {
