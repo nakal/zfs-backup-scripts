@@ -196,11 +196,11 @@ if ($lev > 0) {
 
 # remote file name for current backup
 my $backupname = $lev == 0 ?
-	sprintf("%s-%s-L%1dDF.%s", $backupprefix, $timenow, $lev, $file_extension) :
-	sprintf("%s-%s-L%1dD%1d.%s", $backupprefix, $timenow, $lev, $diff_level, $file_extension);
+	sprintf("%s-%s.L%1dDF.%s", $backupprefix, $timenow, $lev, $file_extension) :
+	sprintf("%s-%s.L%1dD%1d.%s", $backupprefix, $timenow, $lev, $diff_level, $file_extension);
 
 # remote backup mask to extract recent backups on current level
-my $backupmask = sprintf("%s-????-??-??-L%1dD?.%s*", $backupprefix, $lev, $file_extension);
+my $backupmask = sprintf("%s-????-??-??.L%1dD?.%s*", $backupprefix, $lev, $file_extension);
 
 # Get a list of backups on the remote side for the current level
 my @output = ();
@@ -214,9 +214,9 @@ if ($use_ssh) {
 my @remote_backups = ();
 foreach (@output) {
 	# extract date
-	if (m/$backupprefix-([0-9-]*-L${lev}D[0-9F])\.$file_extension$/) {
+	if (m/$backupprefix-([0-9-]*.L${lev}D[0-9F])\.$file_extension$/) {
 		push @remote_backups, $1;
-	} elsif (m/$backupprefix-([0-9-]*-L${lev}D[0-9F])\.$file_extension\.tmp$/) {
+	} elsif (m/$backupprefix-([0-9-]*.L${lev}D[0-9F])\.$file_extension\.tmp$/) {
 		my $d = $1;
 		# remove stale (unfinished) backups directly
 		my $ret;
