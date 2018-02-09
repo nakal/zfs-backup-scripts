@@ -184,9 +184,9 @@ foreach (@output) {
 		if ($use_ssh) {
 			$ret = &execute("ssh",
 				"-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-				"/bin/rm", "$ssh_remotedir/$fn");
+				"/bin/rm", "$fn");
 		} else {
-			$ret = &execute("/bin/rm", "$localdir/$fn");
+			$ret = &execute("/bin/rm", "$fn");
 		}
 		printf($ret == 0 ? "\t*** WARNING: Deleting stale backup %s\n" :
 				"\t*** WARNING: FAILED TO DELETE stale backup %s\n", $d);
