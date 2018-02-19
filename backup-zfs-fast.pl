@@ -194,9 +194,8 @@ foreach (@output) {
 }
 
 # Tidy up backups on the remote side (old backups)
-foreach (keys(%remote_level_backups)) {
+for my $lev (keys(%remote_level_backups)) {
 
-	my $lev = $_;
 	my @remote_backups = sort @{$remote_level_backups{$lev}};
 
 	# delete backups NOT to be deleted
@@ -208,15 +207,14 @@ foreach (keys(%remote_level_backups)) {
 		}
 	}
 	# make space for new backup by keeping <keep_backups_per_level - 1> latest ones for the current level
-	foreach (@remote_backups) {
-		my $n = $_;
+	for my $n (@remote_backups) {
 		my $ret;
 		if ($use_ssh) {
 			$ret = &execute("ssh", "-o",
 				"Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-				"/bin/rm", "$ssh_remotedir/$backupprefix-$n.$file_extension");
+				"/bin/rm", "$ssh_remotedir/$backupprefix-$n.L${lev}D?.$file_extension");
 		} else {
-			$ret = &execute("/bin/rm", "$localdir/$backupprefix-$n.$file_extension");
+			$ret = &execute("/bin/rm", "$localdir/$backupprefix-$n.L${lev}D?.$file_extension");
 		}
 		if ($ret != 0) {
 			printf("\t*** WARNING: Could not delete old backup %s-%s.%s\n",

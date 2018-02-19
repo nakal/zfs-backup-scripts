@@ -46,7 +46,7 @@ foreach (sort @out) {
 	my $fs_flat = $fs;
 	$fs_flat =~ s/\//-/g;
 
-	system("/usr/bin/lockf -s -t 0 $pidfile /usr/bin/nice \"$dirname/backup-zfs-fast.pl\"$cfgparam $fs $hostname-$fs_flat");
+	system("/usr/bin/lockf -s -t 0 $pidfile /usr/sbin/idprio 16 \"$dirname/backup-zfs-fast.pl\"$cfgparam $fs $hostname-$fs_flat");
 }
 
 exit(0);
