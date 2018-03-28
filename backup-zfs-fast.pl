@@ -248,7 +248,7 @@ my $snap_lev_last = 0;
 while (my ($lev, $dates) = each %level_backups) {
 	foreach my $date (@{$dates}) {
 		($snap_lev_last, $snap_date_last) = ($lev, $date)
-			if ($snap_lev_last lt $date);
+			if ($snap_date_last lt $date);
 	}
 }
 

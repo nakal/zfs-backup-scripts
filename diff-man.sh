@@ -20,10 +20,12 @@ if [ "$USER" != "root" ]; then
 	exit 1
 fi
 
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
 DIFFMANSNAP="$ZFSDATASET@diffman"
 if zfs list -H -o name "$DIFFMANSNAP" >/dev/null 2>&1; then
 	DIFFDATE=`zfs get -H -o value creation $DIFFMANSNAP`
-	zfs diff "$DIFFMANSNAP" | grep -v '/<xattrdir>' > "$OUTPUT.diffman"
+	zfs diff -H "$DIFFMANSNAP" | grep -v '/<xattrdir>' > "$OUTPUT.diffman"
 	cat /dev/null > "$OUTPUT"
 	if [ -s "$OUTPUT.diffman" ]; then
 		echo "=== [$ZFSDATASET] changed since $DIFFDATE ===" >> "$OUTPUT"
