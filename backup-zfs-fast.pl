@@ -172,6 +172,7 @@ if ($use_ssh) {
 # Tidy up backups on the remote side (incomplete backups)
 my %remote_level_backups = ();
 foreach (@output) {
+	chomp;
 	# extract date
 	if (m/$backupprefix-([0-9-]*)\.L([0-9])D[0-9F]\.$file_extension$/) {
 		my ($l, $d) = ($2, $1);
@@ -186,7 +187,7 @@ foreach (@output) {
 				"-o", "Compression=no", "$ssh_backup_user\@$ssh_backup_host",
 				"/bin/rm", "$fn");
 		} else {
-			$ret = &execute("/bin/rm", "$fn");
+			$ret = &execute("sh", "-c", "/bin/rm $fn");
 		}
 		printf($ret == 0 ? "\t*** WARNING: Deleting stale backup %s\n" :
 				"\t*** WARNING: FAILED TO DELETE stale backup %s\n", $d);
@@ -214,7 +215,7 @@ for my $lev (keys(%remote_level_backups)) {
 				"Compression=no", "$ssh_backup_user\@$ssh_backup_host",
 				"/bin/rm", "$ssh_remotedir/$backupprefix-$n.L${lev}D?.$file_extension");
 		} else {
-			$ret = &execute("/bin/rm", "$localdir/$backupprefix-$n.L${lev}D?.$file_extension");
+			$ret = &execute("sh", "-c", "/bin/rm $localdir/$backupprefix-$n.L${lev}D?.$file_extension");
 		}
 		if ($ret != 0) {
 			printf("\t*** WARNING: Could not delete old backup %s-%s.%s\n",
