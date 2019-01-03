@@ -92,7 +92,7 @@ if ($use_gpg) {
 }
 if ($use_aes) {
 	$file_extension .= ".aes";
-	$encrypt_pipe = "| $openssl_path aes-128-cbc -e -kfile $aes_passfile";
+	$encrypt_pipe = "| $openssl_path enc -aes128 -kfile $aes_passfile -pbkdf2";
 }
 
 if ($use_ssh && $ssh_ping_backup_host) {
