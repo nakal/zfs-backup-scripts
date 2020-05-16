@@ -136,26 +136,50 @@ foreach (@zfs_history) {
 	}
 }
 
+# Find oldest L0 backup
+my $oldest_l0 = "2000-01-01";
+
 # Tidy up snapshots on the local side
-foreach (keys(%snap_level_backups)) {
+foreach (sort keys(%snap_level_backups)) {
 
 	my $lev = $_;
 
 	# delete snapshots NOT to be deleted
 	my @local_backups = sort(@{$snap_level_backups{$lev}});
+
+	# extract snapshots that are older than oldest L0
+	my @expired_backups = grep { $_ lt $oldest_l0 } @local_backups if ($lev > 0);
+	@local_backups = grep { $_ ge $oldest_l0 } @local_backups if ($lev > 0);
+
+	my @valid = ();
+
+	# Pop n snapshots that should remain and not deleted
 	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
-		pop @local_backups;
+		push @valid, pop @local_backups;
 	}
+
+	$oldest_l0 = pop @valid if ($lev == 0 && scalar(@valid) > 0);
+	push @local_backups, @expired_backups if ($lev > 0);
+
+	# destroy the remaining snapshots
+	my %removed = ();
 	foreach (@local_backups) {
 		my $d = $_;
 		my $ret = &execute("/sbin/zfs", "destroy", "$zfs\@$d-L$lev");
 		if ($ret != 0) {
 			printf("\t*** WARNING: Could not delete old snapshot %s-L%d\n",
 					$d, $lev);
+		} else {
+			$removed{$d} = 1;
 		}
 	}
+
+	# Delete removed snapshots for later computations
+	@{$snap_level_backups{$lev}} =
+		grep { !$removed{$_} } @{$snap_level_backups{$lev}};
 }
 
+# print "Oldest level 0 backup: $oldest_l0\n" if ($test_mode);
 &dump_hash("LOCAL BACKUPS", %snap_level_backups) if ($test_mode);
 
 # remote backup mask to extract backups
