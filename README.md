@@ -88,14 +88,21 @@ keep_backups_per_level 3
 
 #### Compression options
 
-It is possible to compress the backup on-the-fly using `pigz` or
+It is possible to compress the backup on-the-fly using `pigz`, `zstd` or
 `gzip`. Make sure `pigz` is installed. It is not allowed to specify
-both methods at once. When choosing `pigz`, it is further possible
-to specify the number of cores to use with the `pigz_cpu_num` parameter.
+both methods at once. When choosing `pigz` or `zstd`, it is further possible
+to specify the number of cores to use with the `compress_cpu_num` parameter.
+
+Additionally, you can specify a compression level for all compression methods.
+*Please don't use illegal levels* (see man pages for the compression command),
+since the backups will fail entirely. If not specified, the default algorithm
+will be used.
 
 ```
-use_pigz 1
-pigz_cpu_num 6
+use_zstd 1
+compress_cpu_num 6
+compress_level 3
+use_pigz 0
 use_gzip 0
 ```
 

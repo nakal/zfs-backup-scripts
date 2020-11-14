@@ -9,6 +9,7 @@ use Time::Piece;
 my $gpg_path = "/usr/local/bin/gpg";
 my $pigz_path = "/usr/local/bin/pigz";
 my $gzip_path = "/usr/bin/gzip";
+my $zstd_path = "/usr/bin/zstd";
 my $openssl_path = "/usr/bin/openssl";
 my $config_path = undef;
 
@@ -25,8 +26,10 @@ my $gpgdir = "~/.gnupg";
 my $gpgkey = "backup\@example.org";
 my $aes_passfile = undef;
 my $use_pigz = 0;
-my $pigz_cpu_num = 3; # number of CPUs to use
 my $use_gzip = 0;
+my $use_zstd = 0;
+my $compress_cpu_num = 3; # number of CPUs to use
+my $compress_level = 99; # compression level
 my $keep_backups_per_level = 3;
 
 # for debugging; makes commands non-destructive
@@ -44,6 +47,24 @@ my ($zfs, $backupprefix) = @ARGV;
 
 &read_configuration($config_path) if (defined ($config_path));
 
+my $file_extension = "";
+my $compression_pipe = "";
+if ($use_zstd) {
+	$file_extension .= ".zstd";
+	$compress_level = 3 if ($compress_level == 99);
+	$compression_pipe = "| $zstd_path -c -T$compress_cpu_num -$compress_level ";
+}
+if ($use_pigz) {
+	$file_extension .= ".gz";
+	$compress_level = 6 if ($compress_level == 99);
+	$compression_pipe = "| $pigz_path -c -p $compress_cpu_num -$compress_level ";
+}
+if ($use_gzip) {
+	$file_extension .= ".gz";
+	$compress_level = 6 if ($compress_level == 99);
+	$compression_pipe = "| $gzip_path -c -$compress_level ";
+}
+
 my $verbose = 0;
 if ($verbose) {
 	if ($use_ssh) {
@@ -54,15 +75,16 @@ if ($verbose) {
 		print "Creating backup in directory $localdir\n";
 	}
 
-	print "\twill compress " if ($use_pigz || $use_gzip);
-	print "(gzip)\n" if ($use_gzip);
-	print "(pigz; parallel $pigz_cpu_num)\n" if ($use_pigz);
+	print "\twill compress " if ($use_pigz || $use_gzip || $use_zstd);
+	print "(gzip; level=$compress_level)\n" if ($use_gzip);
+	print "(pigz; parallel $compress_cpu_num; level=$compress_level)\n" if ($use_pigz);
+	print "(zstd; parallel $compress_cpu_num; level=$compress_level)\n" if ($use_zstd);
 	print "\twill encrypt (key $gpgkey from directory $gpgdir)\n" if ($use_gpg);
 	print "\twill encrypt (password from file $aes_passfile)\n" if ($use_aes);
 }
 
-if ($use_gzip && $use_pigz) {
-	print "*** FATAL: Configuration error, cannot use gzip and pigz together.\n";
+if ($use_gzip + $use_pigz + $use_zstd > 1) {
+	print "*** FATAL: Configuration error, cannot use multiple compressions together.\n";
 	exit 1;
 }
 
@@ -77,15 +99,7 @@ if ($use_aes) {
 		exit 1;
 	}
 }
-my $file_extension = "gz";
-my $compression_pipe = "";
 my $encrypt_pipe = "";
-if ($use_pigz) {
-	$compression_pipe = "| $pigz_path -c -p $pigz_cpu_num ";
-}
-if ($use_gzip) {
-	$compression_pipe = "| $gzip_path -c ";
-}
 if ($use_gpg) {
 	$file_extension .= ".gpg";
 	$encrypt_pipe = "| $gpg_path --homedir $gpgdir --recipient $gpgkey -e ";
@@ -183,7 +197,7 @@ foreach (sort keys(%snap_level_backups)) {
 &dump_hash("LOCAL BACKUPS", %snap_level_backups) if ($test_mode);
 
 # remote backup mask to extract backups
-my $backupmask = sprintf("%s-????-??-??.L?D?.%s*", $backupprefix, $file_extension);
+my $backupmask = sprintf("%s-????-??-??.L?D?%s*", $backupprefix, $file_extension);
 
 # Get a list of backups on the remote side for the current level
 my @output = ();
@@ -198,10 +212,10 @@ my %remote_level_backups = ();
 foreach (@output) {
 	chomp;
 	# extract date
-	if (m/$backupprefix-([0-9-]*)\.L([0-9])D[0-9F]\.$file_extension$/) {
+	if (m/$backupprefix-([0-9-]*)\.L([0-9])D[0-9F]$file_extension$/) {
 		my ($l, $d) = ($2, $1);
 		push @{$remote_level_backups{$l}}, $d;
-	} elsif (m/$backupprefix-([0-9-]*\.L[0-9]D[0-9F])\.$file_extension\.tmp$/) {
+	} elsif (m/$backupprefix-([0-9-]*\.L[0-9]D[0-9F])$file_extension\.tmp$/) {
 		my $fn = $_;
 		my $d = $1;
 		# remove stale (unfinished) backups directly
@@ -237,12 +251,12 @@ for my $lev (keys(%remote_level_backups)) {
 		if ($use_ssh) {
 			$ret = &execute("ssh", "-o",
 				"Compression=no", "$ssh_backup_user\@$ssh_backup_host",
-				"/bin/rm", "$ssh_remotedir/$backupprefix-$n.L${lev}D?.$file_extension");
+				"/bin/rm", "$ssh_remotedir/$backupprefix-$n.L${lev}D?$file_extension");
 		} else {
-			$ret = &execute("sh", "-c", "/bin/rm $localdir/$backupprefix-$n.L${lev}D?.$file_extension");
+			$ret = &execute("sh", "-c", "/bin/rm $localdir/$backupprefix-$n.L${lev}D?$file_extension");
 		}
 		if ($ret != 0) {
-			printf("\t*** WARNING: Could not delete old backup %s-%s.%s\n",
+			printf("\t*** WARNING: Could not delete old backup %s-%s%s\n",
 				$backupprefix, $n, $file_extension);
 		}
 	}
@@ -342,8 +356,8 @@ if ($lev > 0) {
 
 # remote file name for current backup
 my $backupname = $lev == 0 ?
-	sprintf("%s-%s.L%1dDF.%s", $backupprefix, $timenow, $lev, $file_extension) :
-	sprintf("%s-%s.L%1dD%1d.%s", $backupprefix, $timenow, $lev, $diff_level, $file_extension);
+	sprintf("%s-%s.L%1dDF%s", $backupprefix, $timenow, $lev, $file_extension) :
+	sprintf("%s-%s.L%1dD%1d%s", $backupprefix, $timenow, $lev, $diff_level, $file_extension);
 
 # Construct command for ZFS send
 my $snapname = sprintf("%s-L%1d", $timenow, $lev);
@@ -458,16 +472,24 @@ sub read_configuration {
 			$gpgkey = $cfg{$k};
 			next;
 		}
+		if ($k eq "use_zstd") {
+			$use_zstd = &get_bool($cfg{$k});
+			next;
+		}
 		if ($k eq "use_pigz") {
 			$use_pigz = &get_bool($cfg{$k});
 			next;
 		}
-		if ($k eq "pigz_cpu_num") {
-			$pigz_cpu_num = $cfg{$k};
-			next;
-		}
 		if ($k eq "use_gzip") {
 			$use_gzip = &get_bool($cfg{$k});
+			next;
+		}
+		if ($k eq "compress_cpu_num") {
+			$compress_cpu_num = $cfg{$k};
+			next;
+		}
+		if ($k eq "compress_level") {
+			$compress_level = $cfg{$k};
 			next;
 		}
 
