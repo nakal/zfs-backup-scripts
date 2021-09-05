@@ -369,7 +369,8 @@ if ($lev == 0) {
 	$sendcmd2 = "/sbin/zfs send " . $zfs . "@" . $snapname . "-tmp";
 } else {
 	my $diffsnap = sprintf("%s-L%1d", $diff_date, $diff_level);
-	$sendcmd2 = "/sbin/zfs send -i $diffsnap " . $zfs . "@" . $snapname . "-tmp";
+	$sendcmd2 = "/sbin/zfs send -i " . $zfs . "@" . $diffsnap
+		. " " . $zfs . "@" . $snapname . "-tmp";
 }
 
 print "\tmaking snapshot...\n";
