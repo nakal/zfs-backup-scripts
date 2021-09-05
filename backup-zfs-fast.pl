@@ -158,17 +158,19 @@ foreach (sort keys(%snap_level_backups)) {
 
 	my $lev = $_;
 
-	# delete snapshots NOT to be deleted
+	# sort snapshots for level
 	my @local_backups = sort(@{$snap_level_backups{$lev}});
 
-	# extract snapshots that are older than oldest L0
+	# sort out snapshots that are older than oldest L0
 	my @expired_backups = grep { $_ lt $oldest_l0 } @local_backups if ($lev > 0);
 	@local_backups = grep { $_ ge $oldest_l0 } @local_backups if ($lev > 0);
 
 	my @valid = ();
 
 	# Pop n snapshots that should remain and not deleted
-	for (my $i = 0; $i < $keep_backups_per_level - 1; $i++) {
+	for (my $i = 0;
+		$i < scalar(@local_backups) && $i < $keep_backups_per_level - 1;
+		$i++) {
 		push @valid, pop @local_backups;
 	}
 
